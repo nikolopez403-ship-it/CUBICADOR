@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import re
 import time
 
 from .lector_cype import Atributo, Entidad
@@ -16,16 +17,129 @@ from .modelo import Dibujo, Texto, Trazo
 CAPAS_UTILES = {"BARRAS", "RANGOS", "MUROS", "VIGAS", "TEMP_CONTORNOS"}
 
 
-def conectar():
+# ProgIDs posibles: genérico, por versión (2018 = 22.0 ... 2026 = 25.1) y otros CAD compatibles
+_VERSIONES = ["25.1", "25.0", "24.3", "24.2", "24.1", "24.0", "23.1", "23.0", "22.0"]
+_OTROS_CAD = ["BricscadApp.AcadApplication", "ZWCAD.Application", "GCAD.Application"]
+
+
+def _progids(acadver: str | None) -> list[str]:
+    res = []
+    m = re.match(r"\s*(\d+)\.(\d+)", acadver or "")
+    if m:
+        res += [f"AutoCAD.Application.{m.group(1)}.{m.group(2)}", f"AutoCAD.Application.{m.group(1)}"]
+    res.append("AutoCAD.Application")
+    for v in _VERSIONES:
+        res += [f"AutoCAD.Application.{v}", f"AutoCAD.Application.{v.split('.')[0]}"]
+    res += _OTROS_CAD
+    return list(dict.fromkeys(res))
+
+
+def _desde_rot():
+    """Busca en la tabla de objetos activos de Windows un dibujo .dwg abierto y toma su aplicación."""
+    import pythoncom  # type: ignore
+    import win32com.client  # type: ignore
+    rot = pythoncom.GetRunningObjectTable()
+    ctx = pythoncom.CreateBindCtx(0)
+    for mk in rot:
+        try:
+            nombre = mk.GetDisplayName(ctx, None)
+        except Exception:  # noqa: BLE001
+            continue
+        if not (nombre.lower().endswith(".dwg") or "autocad" in nombre.lower()):
+            continue
+        try:
+            obj = rot.GetObject(mk).QueryInterface(pythoncom.IID_IDispatch)
+            disp = win32com.client.Dispatch(obj)
+            app = disp.Application if hasattr(disp, "Application") else disp
+            app.ActiveDocument  # comprueba que responde
+            return app
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _acad_en_ejecucion() -> bool:
+    try:
+        import subprocess
+        r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq acad.exe", "/NH"], capture_output=True, text=True)
+        return "acad.exe" in r.stdout.lower()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def diagnostico(acadver: str | None = None, producto: str | None = None) -> str:
+    lineas = [f"AutoCAD informado: {producto or '?'} versión {acadver or '?'}",
+              f"acad.exe en ejecución: {'sí' if _acad_en_ejecucion() else 'no'}"]
+    try:
+        import winreg  # type: ignore
+        claves = []
+        i = 0
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "") as raiz:
+            while True:
+                try:
+                    k = winreg.EnumKey(raiz, i)
+                except OSError:
+                    break
+                if k.lower().startswith(("autocad.application", "bricscadapp", "zwcad.application", "gcad.application")):
+                    claves.append(k)
+                i += 1
+        lineas.append("Registrados en Windows: " + (", ".join(claves) or "NINGUNO (no hay automatización ActiveX)"))
+    except Exception as e:  # noqa: BLE001
+        lineas.append(f"Registro de Windows no disponible: {e}")
+    try:
+        import pythoncom  # type: ignore
+        rot = pythoncom.GetRunningObjectTable()
+        ctx = pythoncom.CreateBindCtx(0)
+        nombres = []
+        for mk in rot:
+            try:
+                nombres.append(mk.GetDisplayName(ctx, None))
+            except Exception:  # noqa: BLE001
+                pass
+        lineas.append("Objetos activos: " + (", ".join(nombres[:15]) or "ninguno"))
+    except Exception as e:  # noqa: BLE001
+        lineas.append(f"Tabla de objetos activos no disponible: {e}")
+    try:
+        import ctypes
+        lineas.append(f"Python como administrador: {'sí' if ctypes.windll.shell32.IsUserAnAdmin() else 'no'}")
+    except Exception:  # noqa: BLE001
+        pass
+    import platform
+    lineas.append(f"Python {platform.python_version()} {platform.architecture()[0]}")
+    return "\n  ".join(lineas)
+
+
+def conectar(acadver: str | None = None, producto: str | None = None):
     try:
         import win32com.client  # type: ignore
     except ImportError as e:
         raise RuntimeError("La conexión con AutoCAD requiere Windows y 'pip install pywin32'.") from e
+    if producto and re.search(r"\bLT\b", producto.upper()):
+        raise RuntimeError(
+            f"Está usando {producto}. AutoCAD LT no permite que programas externos se conecten "
+            "(no tiene automatización ActiveX). Se necesita AutoCAD completo (o BricsCAD/ZWCAD).")
+    for progid in _progids(acadver):
+        try:
+            acad = win32com.client.GetActiveObject(progid)
+            return acad, acad.ActiveDocument
+        except Exception:  # noqa: BLE001
+            continue
     try:
-        acad = win32com.client.GetActiveObject("AutoCAD.Application")
-    except Exception as e:  # noqa: BLE001
-        raise RuntimeError("No se encontró una sesión de AutoCAD abierta.") from e
-    return acad, acad.ActiveDocument
+        acad = _desde_rot()
+        if acad is not None:
+            return acad, acad.ActiveDocument
+    except Exception:  # noqa: BLE001
+        pass
+    if _acad_en_ejecucion():
+        # AutoCAD abierto pero no registrado en la tabla de objetos activos: pedirlo por su clase
+        for progid in _progids(acadver)[:3]:
+            try:
+                acad = win32com.client.Dispatch(progid)
+                return acad, acad.ActiveDocument
+            except Exception:  # noqa: BLE001
+                continue
+    raise RuntimeError("No se pudo conectar con AutoCAD.\n\nDiagnóstico (envíe esta pantalla):\n  "
+                       + diagnostico(acadver, producto))
 
 
 def reintentar(f, intentos: int = 8):

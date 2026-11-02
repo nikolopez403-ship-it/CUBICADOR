@@ -46,13 +46,21 @@ def main(argv=None) -> int:
     pc.add_argument("--particion", default="LC", help="FUND, ELEV, LC, VC, BAT u OTRO (LC)")
     pc.add_argument("--sin-agrupar", action="store_true", help="Una fila por etiqueta, sin sumar barras iguales")
 
-    sub.add_parser("asistente", help="Asistente en AutoCAD: dibujar ciclos, cubicar y exportar (Windows)")
+    pa2 = sub.add_parser("asistente", help="Asistente en AutoCAD: dibujar ciclos, cubicar y exportar (Windows)")
+    pa2.add_argument("--acadver", help="Versión de AutoCAD (variable ACADVER), la entrega el comando CUBICAR")
+    pa2.add_argument("--producto", help="Producto (variable PRODUCT), la entrega el comando CUBICAR")
+    sub.add_parser("diagnostico", help="Muestra por qué no se logra conectar con AutoCAD (Windows)")
 
     a = ap.parse_args(argv)
     if a.modo == "cype":
         return _main_cype(a)
     if a.modo == "asistente":
         return _main_asistente(a)
+    if a.modo == "diagnostico":
+        from .autocad_vivo import diagnostico
+        print("  " + diagnostico())
+        input("Presione Enter para cerrar...")
+        return 0
     kw = dict(unidad_dibujo=a.unidad_dibujo, capas_fierro=_lista(a.capas_fierro), capas_texto=_lista(a.capas_texto))
     try:
         if a.modo == "archivo":
@@ -118,7 +126,7 @@ def _main_cype(a) -> int:
 def _main_asistente(a) -> int:
     from .asistente import ejecutar
     try:
-        return ejecutar()
+        return ejecutar(acadver=a.acadver, producto=a.producto)
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         input("Presione Enter para cerrar...")

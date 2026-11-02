@@ -268,10 +268,11 @@ def _leer_doc(ui: InterfazAutoCAD, doc, lector) -> tuple[list, PlanoCype]:
     return ents, plano
 
 
-def ejecutar(ui: InterfazAutoCAD | None = None, lector=None, config: Path | None = None) -> int:
+def ejecutar(ui: InterfazAutoCAD | None = None, lector=None, config: Path | None = None,
+             acadver: str | None = None, producto: str | None = None) -> int:
     if ui is None:
         from .autocad_vivo import conectar
-        acad, doc = conectar()
+        acad, doc = conectar(acadver, producto)
         ui = InterfazAutoCAD(acad, doc)
     if lector is None:
         from .autocad_vivo import entidades_desde_autocad as lector

@@ -48,15 +48,21 @@ REM --- lanzador (usa la ruta exacta de Python, no depende del PATH) ---
 > "%RAIZ%\windows\cubicar.bat" echo @echo off
 >>"%RAIZ%\windows\cubicar.bat" echo chcp 65001 ^>nul
 >>"%RAIZ%\windows\cubicar.bat" echo cd /d "%RAIZ%"
->>"%RAIZ%\windows\cubicar.bat" echo "%PY%" -m cubicador asistente
+>>"%RAIZ%\windows\cubicar.bat" echo "%PY%" -m cubicador asistente --acadver "%%~1" --producto "%%~2"
 >>"%RAIZ%\windows\cubicar.bat" echo if errorlevel 1 pause
+
+REM --- diagnostico de conexion con AutoCAD ---
+> "%RAIZ%\windows\diagnostico.bat" echo @echo off
+>>"%RAIZ%\windows\diagnostico.bat" echo chcp 65001 ^>nul
+>>"%RAIZ%\windows\diagnostico.bat" echo cd /d "%RAIZ%"
+>>"%RAIZ%\windows\diagnostico.bat" echo "%PY%" -m cubicador diagnostico
 
 REM --- comando CUBICAR para AutoCAD (ruta con barras normales para LISP) ---
 set "RUTA_LISP=%RAIZ:\=/%"
 set "LSP=%RAIZ%\windows\cubicar.lsp"
 > "%LSP%" echo ;; Comando CUBICAR: dibuja los cuadrantes de ciclo, cubica el fierro y exporta a Excel
 >>"%LSP%" echo (defun c:CUBICAR ()
->>"%LSP%" echo   (startapp "cmd.exe" "/c \"%RUTA_LISP%/windows/cubicar.bat\"")
+>>"%LSP%" echo   (startapp "cmd.exe" (strcat "/c \"\"%RUTA_LISP%/windows/cubicar.bat\" \"" (getvar "ACADVER") "\" \"" (getvar "PRODUCT") "\"\""))
 >>"%LSP%" echo   (princ "\nCubicador iniciado: siga las instrucciones en la linea de comandos.")
 >>"%LSP%" echo   (princ)
 >>"%LSP%" echo )
