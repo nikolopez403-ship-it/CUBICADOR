@@ -53,8 +53,9 @@ punta de la flecha para asociar).
 
 ## Uso en AutoCAD (Windows): comando CUBICAR
 
-1. Instale Python 3.10+ (marcando *Add python.exe to PATH*).
-2. Ejecute `windows\instalar.bat` una vez: instala dependencias y genera `windows\cubicar.lsp`.
+1. Ejecute `windows\instalar.bat` una vez: si no hay Python lo instala (winget), instala las
+   dependencias y genera `windows\cubicar.lsp`.
+2. Si no pudo instalar Python solo, instálelo desde python.org marcando *Add python.exe to PATH*.
 3. En AutoCAD: `APPLOAD` → cargue `windows\cubicar.lsp` (agréguelo al *Maletín de inicio*).
 4. Con el plano de losas CYPE abierto (y el de refuerzos también abierto si corresponde), escriba **CUBICAR**:
    - pregunta si cubicar también los demás planos abiertos,

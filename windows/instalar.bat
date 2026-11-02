@@ -1,33 +1,54 @@
 @echo off
 chcp 65001 >nul
+setlocal EnableExtensions
 REM ============================================================
 REM  Instalador del Cubicador de fierro (ejecutar una sola vez)
-REM  Requiere Python 3.10+ instalado (https://www.python.org, marcar "Add to PATH")
+REM  Si no hay Python, lo instala automaticamente con winget.
 REM ============================================================
 cd /d "%~dp0.."
-set RAIZ=%CD%
+set "RAIZ=%CD%"
+set "PY="
 
-where python >nul 2>nul
+call :buscar_python
+if defined PY goto tengo_python
+
+echo No se encontro Python en este equipo.
+where winget >nul 2>nul
+if errorlevel 1 goto sin_winget
+echo Instalando Python 3.12 (puede tardar unos minutos)...
+winget install -e --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements
+call :buscar_python
+if defined PY goto tengo_python
+
+:sin_winget
+echo.
+echo No se pudo instalar Python automaticamente.
+echo  1. Se abrira la pagina de descarga: instale Python 3.12
+echo  2. En la primera pantalla del instalador MARQUE "Add python.exe to PATH"
+echo  3. Vuelva a ejecutar este instalar.bat
+start "" https://www.python.org/downloads/
+pause
+exit /b 1
+
+:tengo_python
+"%PY%" -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"
 if errorlevel 1 (
-    echo No se encontro Python. Instalelo desde https://www.python.org marcando "Add python.exe to PATH".
+    echo Se encontro un Python antiguo en "%PY%". Se requiere Python 3.10 o superior.
+    start "" https://www.python.org/downloads/
     pause
     exit /b 1
 )
-
+echo Usando Python: "%PY%"
 echo Instalando dependencias...
-python -m pip install --upgrade pip >nul
-python -m pip install -r "%RAIZ%\requirements.txt"
-if errorlevel 1 (
-    echo Error instalando dependencias.
-    pause
-    exit /b 1
-)
+"%PY%" -m pip install --upgrade pip --quiet
+"%PY%" -m pip install -r "%RAIZ%\requirements.txt"
+if errorlevel 1 goto error_pip
 
-REM --- lanzador ---
+REM --- lanzador (usa la ruta exacta de Python, no depende del PATH) ---
 > "%RAIZ%\windows\cubicar.bat" echo @echo off
 >>"%RAIZ%\windows\cubicar.bat" echo chcp 65001 ^>nul
 >>"%RAIZ%\windows\cubicar.bat" echo cd /d "%RAIZ%"
->>"%RAIZ%\windows\cubicar.bat" echo python -m cubicador asistente
+>>"%RAIZ%\windows\cubicar.bat" echo "%PY%" -m cubicador asistente
 >>"%RAIZ%\windows\cubicar.bat" echo if errorlevel 1 pause
 
 REM --- comando CUBICAR para AutoCAD (ruta con barras normales para LISP) ---
@@ -51,3 +72,28 @@ echo  (agreguelo al "Maletin de inicio / Startup Suite" para que cargue siempre)
 echo  Luego escriba CUBICAR con el plano de losas abierto.
 echo ============================================================
 pause
+exit /b 0
+
+:error_pip
+echo.
+echo Error instalando dependencias. Revise su conexion a internet y vuelva a intentar.
+pause
+exit /b 1
+
+REM ------------------------------------------------------------
+REM  Busca un Python real (ignora el acceso directo de Microsoft Store)
+REM ------------------------------------------------------------
+:buscar_python
+set "PY="
+for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable)" 2^>nul') do set "PY=%%P"
+if defined PY if exist "%PY%" exit /b 0
+set "PY="
+for /f "delims=" %%P in ('python -c "import sys; print(sys.executable)" 2^>nul') do set "PY=%%P"
+if defined PY if exist "%PY%" exit /b 0
+set "PY="
+for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do if exist "%%D\python.exe" set "PY=%%D\python.exe"
+if defined PY exit /b 0
+for /d %%D in ("%ProgramFiles%\Python3*") do if exist "%%D\python.exe" set "PY=%%D\python.exe"
+if defined PY exit /b 0
+set "PY="
+exit /b 0
