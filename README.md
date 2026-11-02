@@ -51,7 +51,9 @@ punta de la flecha para asociar).
 - No descuenta traslapes ni optimiza cortes.
 - La conexión en vivo (`autocad_vivo.py`) usa COM de AutoCAD y no está probada en Windows todavía.
 
-## Uso en AutoCAD (Windows): comando CUBICAR
+## Uso en AutoCAD o GstarCAD (Windows): comando CUBICAR
+
+Funciona con AutoCAD completo, GstarCAD, BricsCAD y ZWCAD (no con AutoCAD LT, que no tiene ActiveX).
 
 1. Ejecute `windows\instalar.bat` una vez: si no hay Python lo instala (winget), instala las
    dependencias y genera `windows\cubicar.lsp`.

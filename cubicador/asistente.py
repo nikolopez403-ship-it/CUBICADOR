@@ -251,7 +251,7 @@ def _dibujar_ciclo(ui: InterfazAutoCAD, n: int) -> tuple[list | None, bool]:
             c = list(ent.Coordinates)
             pol = [(c[i], c[i + 1]) for i in range(0, len(c) - 1, 2)]
         except Exception:  # noqa: BLE001
-            ui.msg("El objeto seleccionado no es una polilínea.")
+            ui.msg("El objeto seleccionado no es una polilínea liviana (LWPOLYLINE).")
             return None, True
         if len(pol) < 3:
             ui.msg("La polilínea debe tener al menos 3 vértices.")

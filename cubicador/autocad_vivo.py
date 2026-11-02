@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 import time
 
@@ -19,19 +20,58 @@ CAPAS_UTILES = {"BARRAS", "RANGOS", "MUROS", "VIGAS", "TEMP_CONTORNOS"}
 
 # ProgIDs posibles: genérico, por versión (2018 = 22.0 ... 2026 = 25.1) y otros CAD compatibles
 _VERSIONES = ["25.1", "25.0", "24.3", "24.2", "24.1", "24.0", "23.1", "23.0", "22.0"]
-_OTROS_CAD = ["BricscadApp.AcadApplication", "ZWCAD.Application", "GCAD.Application"]
+_OTROS_CAD = ["GStarCAD.Application", "Gcad.Application", "GCAD.Application",
+              "BricscadApp.AcadApplication", "ZWCAD.Application"]
+_PREFIJOS_CAD = ("autocad.application", "gstarcad.application", "gcad.application",
+                 "bricscadapp.acadapplication", "zwcad.application")
+_EJECUTABLES = ("acad.exe", "gcad.exe", "gstarcad.exe", "bricscad.exe", "zwcad.exe")
+
+
+def _progids_registrados() -> list[str]:
+    """ProgIDs de programas CAD registrados en Windows (HKEY_CLASSES_ROOT)."""
+    try:
+        import winreg  # type: ignore
+    except ImportError:
+        return []
+    res, i = [], 0
+    try:
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "") as raiz:
+            while True:
+                try:
+                    k = winreg.EnumKey(raiz, i)
+                except OSError:
+                    break
+                if k.lower().startswith(_PREFIJOS_CAD):
+                    res.append(k)
+                i += 1
+    except OSError:
+        return []
+    # los versionados más nuevos primero
+    return sorted(res, key=lambda x: [int(n) for n in re.findall(r"\d+", x)] or [0], reverse=True)
 
 
 def _progids(acadver: str | None) -> list[str]:
-    res = []
+    """Candidatos en orden: los del producto que lanzó el comando primero."""
+    producto = os.environ.get("CUBICADOR_PRODUCTO", "").upper()
+    registrados = _progids_registrados()
+    autocad = []
     m = re.match(r"\s*(\d+)\.(\d+)", acadver or "")
-    if m:
-        res += [f"AutoCAD.Application.{m.group(1)}.{m.group(2)}", f"AutoCAD.Application.{m.group(1)}"]
-    res.append("AutoCAD.Application")
+    if m and ("AUTOCAD" in producto or not producto):
+        autocad += [f"AutoCAD.Application.{m.group(1)}.{m.group(2)}", f"AutoCAD.Application.{m.group(1)}"]
+    autocad += [r for r in registrados if r.lower().startswith("autocad")] + ["AutoCAD.Application"]
     for v in _VERSIONES:
-        res += [f"AutoCAD.Application.{v}", f"AutoCAD.Application.{v.split('.')[0]}"]
-    res += _OTROS_CAD
-    return list(dict.fromkeys(res))
+        autocad += [f"AutoCAD.Application.{v}", f"AutoCAD.Application.{v.split('.')[0]}"]
+    gstar = [r for r in registrados if r.lower().startswith(("gstarcad", "gcad"))] + \
+        ["GStarCAD.Application", "Gcad.Application", "GCAD.Application"]
+    otros = [r for r in registrados if r.lower().startswith(("bricscad", "zwcad"))] + \
+        ["BricscadApp.AcadApplication", "ZWCAD.Application"]
+    if "GSTAR" in producto:
+        orden = gstar + autocad + otros
+    elif "BRICS" in producto or "ZWCAD" in producto:
+        orden = otros + autocad + gstar
+    else:
+        orden = autocad + gstar + otros
+    return list(dict.fromkeys(orden))
 
 
 def _desde_rot():
@@ -61,15 +101,16 @@ def _desde_rot():
 def _acad_en_ejecucion() -> bool:
     try:
         import subprocess
-        r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq acad.exe", "/NH"], capture_output=True, text=True)
-        return "acad.exe" in r.stdout.lower()
+        r = subprocess.run(["tasklist", "/NH"], capture_output=True, text=True)
+        salida = r.stdout.lower()
+        return any(x in salida for x in _EJECUTABLES)
     except Exception:  # noqa: BLE001
         return False
 
 
 def diagnostico(acadver: str | None = None, producto: str | None = None) -> str:
     lineas = [f"AutoCAD informado: {producto or '?'} versión {acadver or '?'}",
-              f"acad.exe en ejecución: {'sí' if _acad_en_ejecucion() else 'no'}"]
+              f"Programa CAD en ejecución: {'sí' if _acad_en_ejecucion() else 'no'}"]
     try:
         import winreg  # type: ignore
         claves = []
@@ -80,7 +121,7 @@ def diagnostico(acadver: str | None = None, producto: str | None = None) -> str:
                     k = winreg.EnumKey(raiz, i)
                 except OSError:
                     break
-                if k.lower().startswith(("autocad.application", "bricscadapp", "zwcad.application", "gcad.application")):
+                if k.lower().startswith(_PREFIJOS_CAD):
                     claves.append(k)
                 i += 1
         lineas.append("Registrados en Windows: " + (", ".join(claves) or "NINGUNO (no hay automatización ActiveX)"))
@@ -118,6 +159,8 @@ def conectar(acadver: str | None = None, producto: str | None = None):
         import win32com.client  # type: ignore
     except ImportError as e:
         raise RuntimeError("La conexión con AutoCAD requiere Windows y 'pip install pywin32'.") from e
+    if producto:
+        os.environ["CUBICADOR_PRODUCTO"] = producto
     for progid in _progids(acadver):
         try:
             acad = win32com.client.GetActiveObject(progid)
@@ -132,7 +175,7 @@ def conectar(acadver: str | None = None, producto: str | None = None):
         pass
     if _acad_en_ejecucion():
         # AutoCAD abierto pero no registrado en la tabla de objetos activos: pedirlo por su clase
-        for progid in _progids(acadver)[:3]:
+        for progid in [p for p in _progids(acadver) if p in _progids_registrados()][:3] or _progids(acadver)[:3]:
             try:
                 acad = win32com.client.Dispatch(progid)
                 return acad, acad.ActiveDocument
@@ -198,8 +241,13 @@ def _segmento_dim(ent, medida: float):
         return None
 
 
+def nombre_objeto(ent) -> str:
+    """ObjectName normalizado: GstarCAD y otros CAD usan GcDb..., OdDb... en vez de AcDb..."""
+    return re.sub(r"^[A-Za-z]{2}Db", "AcDb", reintentar(lambda: ent.ObjectName) or "")
+
+
 def entidad_desde_com(ent) -> Entidad | None:
-    nombre = reintentar(lambda: ent.ObjectName)
+    nombre = nombre_objeto(ent)
     capa = ent.Layer or ""
     cp = capa.upper()
     ciclo = "CICLO" in cp
@@ -276,7 +324,7 @@ def leer_autocad(seleccion: bool = False, unidad_dibujo: str | None = None,
     lineas = []
     for ent in entidades:
         try:
-            nombre, capa = reintentar(lambda: ent.ObjectName), ent.Layer
+            nombre, capa = nombre_objeto(ent), ent.Layer
             if nombre in ("AcDbText", "AcDbAttribute") and _capa_ok(capa, capas_texto):
                 p = ent.InsertionPoint
                 dibujo.textos.append(Texto(ent.TextString, (p[0] * k, p[1] * k), capa))
