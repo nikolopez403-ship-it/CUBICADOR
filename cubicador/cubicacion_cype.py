@@ -94,7 +94,7 @@ def _buscar_rango(et: EtiquetaCype, plano: PlanoCype, tol: float = 15.0):
     return mejor
 
 
-def _rango_por_apoyo(et: EtiquetaCype, lineas, gap: float = 3.0, tol_col: float = 1.0):
+def _rango_por_apoyo(et: EtiquetaCype, lineas, gap: float = 3.0, tol_col: float = 1.0, alcance: float = 0.0):
     """Rango = largo del muro (o viga) que la barra cruza.
 
     Se buscan las líneas del apoyo perpendiculares a la barra que la cortan, se toma la más
@@ -117,7 +117,10 @@ def _rango_por_apoyo(et: EtiquetaCype, lineas, gap: float = 3.0, tol_col: float 
         n = math.hypot(*v)
         return n > 0 and abs((v[0] * ub[0] + v[1] * ub[1]) / n) < 0.1
 
-    cortan = [l for l in lineas if perp(l) and _dist_seg_seg(a, b, l[0], l[1]) <= 0.5]
+    # alcance > 0: también vale un muro que no cruza la barra pero está a esa distancia de su extremo
+    ea = (a[0] - ub[0] * alcance, a[1] - ub[1] * alcance)
+    eb = (b[0] + ub[0] * alcance, b[1] + ub[1] * alcance)
+    cortan = [l for l in lineas if perp(l) and _dist_seg_seg(ea, eb, l[0], l[1]) <= 0.5]
     if not cortan:
         return None
 
@@ -228,12 +231,15 @@ def cubicar_cype(plano: PlanoCype, nombre_plano: str, particion: str, piso, cicl
                 if hallado:
                     rango, et.rango_seg = hallado
                     obs.append("Rango tomado de la cota que cruza la barra (rango compartido)")
-                else:
-                    for lineas, nombre in ((plano.muros, "del muro"), (plano.vigas, "de la viga")):
-                        hallado = _rango_por_apoyo(et, lineas)
+                elif tipo == "SUPLE":   # solo suples: se distribuyen a lo largo del muro
+                    for lineas, nombre, alcance in ((plano.muros, "del muro que cruza", 0),
+                                                    (plano.muros, "del muro contiguo", 100),
+                                                    (plano.vigas, "de la viga que cruza", 0),
+                                                    (plano.vigas, "de la viga contigua", 100)):
+                        hallado = _rango_por_apoyo(et, lineas, alcance=alcance)
                         if hallado:
                             rango, et.rango_seg = hallado
-                            obs.append(f"Sin cota de rango: se usa el largo {nombre} que cruza ({rango:.0f} cm)")
+                            obs.append(f"Suple sin cota de rango: se usa el largo {nombre} ({rango:.0f} cm)")
                             break
             if rango:
                 cant = cantidad_por_rango(rango, c["s"])
