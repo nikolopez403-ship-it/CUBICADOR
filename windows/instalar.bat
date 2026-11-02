@@ -24,26 +24,23 @@ if errorlevel 1 (
 )
 
 REM --- lanzador ---
-(
-echo @echo off
-echo chcp 65001 ^>nul
-echo cd /d "%RAIZ%"
-echo python -m cubicador asistente
-echo if errorlevel 1 pause
-) > "%RAIZ%\windows\cubicar.bat"
+> "%RAIZ%\windows\cubicar.bat" echo @echo off
+>>"%RAIZ%\windows\cubicar.bat" echo chcp 65001 ^>nul
+>>"%RAIZ%\windows\cubicar.bat" echo cd /d "%RAIZ%"
+>>"%RAIZ%\windows\cubicar.bat" echo python -m cubicador asistente
+>>"%RAIZ%\windows\cubicar.bat" echo if errorlevel 1 pause
 
 REM --- comando CUBICAR para AutoCAD (ruta con barras normales para LISP) ---
-set RUTA_LISP=%RAIZ:\=/%
-(
-echo ;; Comando CUBICAR: dibuja los cuadrantes de ciclo, cubica el fierro y exporta a Excel
-echo (defun c:CUBICAR ()
-echo   (startapp "cmd.exe" "/c \"%RUTA_LISP%/windows/cubicar.bat\"")
-echo   (princ "\nCubicador iniciado: siga las instrucciones en la linea de comandos.")
-echo   (princ)
-echo )
-echo (princ "\nCubicador de fierro cargado. Escriba CUBICAR para comenzar.")
-echo (princ)
-) > "%RAIZ%\windows\cubicar.lsp"
+set "RUTA_LISP=%RAIZ:\=/%"
+set "LSP=%RAIZ%\windows\cubicar.lsp"
+> "%LSP%" echo ;; Comando CUBICAR: dibuja los cuadrantes de ciclo, cubica el fierro y exporta a Excel
+>>"%LSP%" echo (defun c:CUBICAR ()
+>>"%LSP%" echo   (startapp "cmd.exe" "/c \"%RUTA_LISP%/windows/cubicar.bat\"")
+>>"%LSP%" echo   (princ "\nCubicador iniciado: siga las instrucciones en la linea de comandos.")
+>>"%LSP%" echo   (princ)
+>>"%LSP%" echo )
+>>"%LSP%" echo (princ "\nCubicador de fierro cargado. Escriba CUBICAR para comenzar.")
+>>"%LSP%" echo (princ)
 
 echo.
 echo ============================================================
