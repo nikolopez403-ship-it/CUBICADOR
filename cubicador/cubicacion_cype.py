@@ -157,6 +157,52 @@ def _rango_por_apoyo(et: EtiquetaCype, lineas, gap: float = 3.0, tol_col: float 
     return mejor
 
 
+def _corte_rayo(o: Punto, d: Punto, a: Punto, b: Punto) -> float | None:
+    """Distancia t > 0 a la que el rayo o + t·d corta el segmento a-b."""
+    e = (b[0] - a[0], b[1] - a[1])
+    den = d[0] * e[1] - d[1] * e[0]
+    if abs(den) < 1e-9:
+        return None
+    w = (a[0] - o[0], a[1] - o[1])
+    t = (w[0] * e[1] - w[1] * e[0]) / den
+    u = (w[0] * d[1] - w[1] * d[0]) / den
+    return t if t > 1.0 and -1e-6 <= u <= 1 + 1e-6 else None
+
+
+def _rango_por_bordes(et: EtiquetaCype, plano: PlanoCype, maximo: float = 2500.0, minimo_borde: float = 80.0):
+    """Malla sin cota: rango perpendicular a la barra, a la altura de su etiqueta, desde el
+    primer muro / viga / borde de losa a un lado hasta el primero al otro lado.
+    Los shafts y vanos pequeños no interrumpen el rango."""
+    seg = _tramo_principal(et)
+    if not seg:
+        return None
+    a, b = seg
+    vb = (b[0] - a[0], b[1] - a[1])
+    nb = math.hypot(*vb)
+    if nb == 0:
+        return None
+    ub = (vb[0] / nb, vb[1] / nb)
+    # punto de la barra a la altura de la etiqueta
+    t = max(0.0, min(nb, (et.punto[0] - a[0]) * ub[0] + (et.punto[1] - a[1]) * ub[1]))
+    o = (a[0] + ub[0] * t, a[1] + ub[1] * t)
+    n = (-ub[1], ub[0])
+    # los bordes cortos (shafts, vanos, cabezas de muro) no cortan la distribución
+    bordes = [l for l in list(plano.muros) + list(plano.vigas) if math.dist(l[0], l[1]) >= minimo_borde]
+    for l in plano.losas:
+        if l.contorno:
+            c = l.contorno
+            bordes += [(c[i], c[(i + 1) % len(c)]) for i in range(len(c))]
+    lados = []
+    for d in (n, (-n[0], -n[1])):
+        cortes = [x for x in (_corte_rayo(o, d, p, q) for p, q in bordes) if x is not None and x <= maximo]
+        if not cortes:
+            return None
+        lados.append(min(cortes))
+    p1 = (o[0] + n[0] * lados[0], o[1] + n[1] * lados[0])
+    p2 = (o[0] - n[0] * lados[1], o[1] - n[1] * lados[1])
+    return lados[0] + lados[1], (p1, p2)
+
+
 def _giros_reales(et: EtiquetaCype) -> list[float]:
     """Giros a ~90° del dibujo, ignorando los quiebres gráficos de CYPE (±31°)."""
     if not et.trazo:
@@ -231,6 +277,11 @@ def cubicar_cype(plano: PlanoCype, nombre_plano: str, particion: str, piso, cicl
                 if hallado:
                     rango, et.rango_seg = hallado
                     obs.append("Rango tomado de la cota que cruza la barra (rango compartido)")
+                elif tipo in ("INF", "SUP", "MALLA"):   # malla: de muro/borde a muro/borde
+                    hallado = _rango_por_bordes(et, plano)
+                    if hallado:
+                        rango, et.rango_seg = hallado
+                        obs.append(f"Malla sin cota de rango: distribuida entre muros/bordes ({rango:.0f} cm)")
                 elif tipo == "SUPLE":   # solo suples: se distribuyen a lo largo del muro
                     for lineas, nombre, alcance in ((plano.muros, "del muro que cruza", 0),
                                                     (plano.muros, "del muro contiguo", 100),

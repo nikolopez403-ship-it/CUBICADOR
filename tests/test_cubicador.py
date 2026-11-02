@@ -141,3 +141,16 @@ def test_rango_por_largo_de_muro():
             ((-200, 15), (370, 15))]                           # cara 2
     largo, _ = _rango_por_apoyo(et, muro)
     assert round(largo) == 570
+
+
+def test_rango_malla_entre_bordes():
+    from cubicador.cubicacion_cype import _rango_por_bordes
+    from cubicador.lector_cype import EtiquetaCype, PlanoCype
+    from cubicador.modelo import Trazo
+    # barra vertical en x=100; borde izquierdo x=0, muro derecho x=600, shaft pequeño en x=500..550
+    et = EtiquetaCype("Ø8a30i", punto=(105, 150), trazo=Trazo([480], [(100, -100), (100, 380)]))
+    plano = PlanoCype([], [], [])
+    plano.vigas = [((0, -200), (0, 500)), ((500, 120), (500, 170)), ((550, 120), (550, 170))]
+    plano.muros = [((600, -200), (600, 500))]
+    largo, (p1, p2) = _rango_por_bordes(et, plano)
+    assert round(largo) == 600
