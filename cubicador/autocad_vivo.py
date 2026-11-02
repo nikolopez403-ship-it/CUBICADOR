@@ -110,14 +110,14 @@ def diagnostico(acadver: str | None = None, producto: str | None = None) -> str:
 
 
 def conectar(acadver: str | None = None, producto: str | None = None):
-    try:
-        import win32com.client  # type: ignore
-    except ImportError as e:
-        raise RuntimeError("La conexión con AutoCAD requiere Windows y 'pip install pywin32'.") from e
     if producto and re.search(r"\bLT\b", producto.upper()):
         raise RuntimeError(
             f"Está usando {producto}. AutoCAD LT no permite que programas externos se conecten "
             "(no tiene automatización ActiveX). Se necesita AutoCAD completo (o BricsCAD/ZWCAD).")
+    try:
+        import win32com.client  # type: ignore
+    except ImportError as e:
+        raise RuntimeError("La conexión con AutoCAD requiere Windows y 'pip install pywin32'.") from e
     for progid in _progids(acadver):
         try:
             acad = win32com.client.GetActiveObject(progid)
