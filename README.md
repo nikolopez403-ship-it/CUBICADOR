@@ -51,7 +51,24 @@ punta de la flecha para asociar).
 - No descuenta traslapes ni optimiza cortes.
 - La conexión en vivo (`autocad_vivo.py`) usa COM de AutoCAD y no está probada en Windows todavía.
 
-## Planos de losas CYPECAD → pedido Armacero
+## Uso en AutoCAD (Windows): comando CUBICAR
+
+1. Instale Python 3.10+ (marcando *Add python.exe to PATH*).
+2. Ejecute `windows\instalar.bat` una vez: instala dependencias y genera `windows\cubicar.lsp`.
+3. En AutoCAD: `APPLOAD` → cargue `windows\cubicar.lsp` (agréguelo al *Maletín de inicio*).
+4. Con el plano de losas CYPE abierto (y el de refuerzos también abierto si corresponde), escriba **CUBICAR**:
+   - pregunta si cubicar también los demás planos abiertos,
+   - si ya hay cuadrantes en la capa `CICLOS`: *Usar / Agregar / Redibujar*,
+   - pide cada ciclo: **Rectángulo** (2 esquinas), **Polígono** (clic a clic, Enter para cerrar),
+     **Seleccionar** una polilínea existente o **Terminar**; los dibuja en `CICLOS` con el texto C1, C2…,
+   - pide piso y partición (sugeridos desde el título del plano),
+   - la primera vez pide la planilla Armacero base (queda recordada),
+   - genera `Pedidos fierro\P12 - LC - C1.xlsx`, `... - C2.xlsx`… y `P12 - LC_revision.xlsx`
+     en la carpeta del plano, y abre la carpeta.
+
+Lee el dibujo directamente desde AutoCAD (no necesita LibreDWG ni guardar el DWG).
+
+## Planos de losas CYPECAD → pedido Armacero (consola)
 
     python -m cubicador cype PLANO_MALLA.dwg PLANO_REFUERZOS.dwg \
         --plantilla Pedido_Fe.xlsx --piso 12 --ciclo 3 -o "P12 - LC - C3.xlsx"

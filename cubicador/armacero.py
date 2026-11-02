@@ -316,7 +316,7 @@ def exportar_armacero(filas: list[FilaPedido], plantilla: str | Path, salida: st
             dim.set("ref", f"A1:AJ{max(ultima, 602)}")
     # B2 (nombre sugerido) y B3 (peso total): limpiar caché
     for r in (2, 3):
-        for c in filas_xml[r].findall(f"{N}c"):
+        for c in (filas_xml[r].findall(f"{N}c") if r in filas_xml else []):
             if c.find(f"{N}f") is not None:
                 _limpiar_cache_formula(c)
 

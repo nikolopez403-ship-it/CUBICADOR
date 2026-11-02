@@ -24,13 +24,17 @@ def _cortan(a: Punto, b: Punto, c: Punto, d: Punto) -> bool:
     return o1 != o2 and o3 != o4
 
 
-def toca(polilinea: list[Punto], poligono: list[Punto]) -> bool:
+def toca(polilinea: list[Punto], poligono: list[Punto], tol: float = 1.0) -> bool:
+    """La barra toca el cuadrante si queda dentro, lo cruza o pasa a menos de `tol` cm del borde."""
+    from .cubicacion_cype import _dist_seg_seg
     if any(_dentro(p, poligono) for p in polilinea):
         return True
     n = len(poligono)
     for i in range(len(polilinea) - 1):
         for j in range(n):
-            if _cortan(polilinea[i], polilinea[i + 1], poligono[j], poligono[(j + 1) % n]):
+            a, b = poligono[j], poligono[(j + 1) % n]
+            if _cortan(polilinea[i], polilinea[i + 1], a, b) or \
+                    _dist_seg_seg(polilinea[i], polilinea[i + 1], a, b) <= tol:
                 return True
     return False
 

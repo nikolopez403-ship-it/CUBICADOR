@@ -46,9 +46,13 @@ def main(argv=None) -> int:
     pc.add_argument("--particion", default="LC", help="FUND, ELEV, LC, VC, BAT u OTRO (LC)")
     pc.add_argument("--sin-agrupar", action="store_true", help="Una fila por etiqueta, sin sumar barras iguales")
 
+    sub.add_parser("asistente", help="Asistente en AutoCAD: dibujar ciclos, cubicar y exportar (Windows)")
+
     a = ap.parse_args(argv)
     if a.modo == "cype":
         return _main_cype(a)
+    if a.modo == "asistente":
+        return _main_asistente(a)
     kw = dict(unidad_dibujo=a.unidad_dibujo, capas_fierro=_lista(a.capas_fierro), capas_texto=_lista(a.capas_texto))
     try:
         if a.modo == "archivo":
@@ -85,13 +89,8 @@ def main(argv=None) -> int:
 
 
 def _main_cype(a) -> int:
-    from collections import defaultdict
-
-    from .armacero import exportar_armacero
-    from .cubicacion_cype import cubicar_cype
     from .lector_cype import leer_cuadrantes, leer_plano_cype
-    from .pesos import peso_por_metro
-    from .revision import exportar_revision, es_pendiente
+    from .pedido import generar_pedidos
 
     try:
         planos = [(r, leer_plano_cype(r)) for r in a.planos]
@@ -104,36 +103,26 @@ def _main_cype(a) -> int:
               file=sys.stderr)
         return 1
     if cuadrantes:
-        print("Ciclos: " + ", ".join(f"{c.nombre}" for c in cuadrantes))
-
-    filas, detalles = [], []
-    for ruta, plano in planos:
-        nombre = plano.titulo or Path(ruta).stem
-        f, d = cubicar_cype(plano, nombre, a.particion, a.piso, a.ciclo,
-                            agrupar=not a.sin_agrupar, cuadrantes=cuadrantes or None)
-        filas += f
-        detalles += d
-        print(f"{nombre}: {len(d)} etiquetas -> {len(f)} filas")
-
-    salida = Path(a.salida)
-    salida.parent.mkdir(parents=True, exist_ok=True)
-    por_ciclo: dict = defaultdict(list)
-    for fl in filas:
-        por_ciclo[fl.ciclo if cuadrantes else None].append(fl)
-    for ciclo, fls in sorted(por_ciclo.items(), key=lambda x: x[0] or 0):
-        destino = salida if ciclo is None else salida.with_name(f"{salida.stem} - C{ciclo}{salida.suffix}")
-        exportar_armacero(fls, a.plantilla, destino)
-        kg = defaultdict(float)
-        for r in fls:
-            kg[r.diametro] += r.cantidad * sum(r.lados) / 100 * peso_por_metro(r.diametro)
-        print(f"{destino.name}: {len(fls)} filas, {sum(kg.values()):.1f} kg  "
-              + "  ".join(f"Ø{k}={v:.0f}" for k, v in sorted(kg.items())))
-    rev = salida.with_name(salida.stem + "_revision.xlsx")
-    exportar_revision(detalles, rev)
-    pend = sum(1 for d in detalles if es_pendiente(d))
-    if pend:
-        print(f"⚠ {pend} partidas NO incluidas en el pedido (ver hoja 'Pendientes' de {rev.name})")
+        print("Ciclos: " + ", ".join(c.nombre for c in cuadrantes))
+    planos = [(p.titulo or Path(r).stem, p) for r, p in planos]
+    res = generar_pedidos(planos, a.plantilla, a.salida, a.piso, a.particion, a.ciclo,
+                          cuadrantes, agrupar=not a.sin_agrupar)
+    print(f"{res.etiquetas} partidas leídas")
+    for ruta, nf, kg, por_d in res.archivos:
+        print(f"{ruta.name}: {nf} filas, {kg:.1f} kg  " + "  ".join(f"Ø{k}={v:.0f}" for k, v in por_d.items()))
+    if res.pendientes:
+        print(f"⚠ {res.pendientes} partidas NO incluidas en el pedido (ver hoja 'Pendientes' de {res.revision.name})")
     return 0
+
+
+def _main_asistente(a) -> int:
+    from .asistente import ejecutar
+    try:
+        return ejecutar()
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        input("Presione Enter para cerrar...")
+        return 1
 
 
 if __name__ == "__main__":
