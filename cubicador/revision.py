@@ -28,19 +28,23 @@ def _hoja(wb, titulo, columnas, anchos):
     return ws
 
 
+def es_pendiente(d: Detalle) -> bool:
+    return any("NO calculada" in o or "No se pudo" in o or "Fuera de todos" in o for o in d.observaciones)
+
+
 def exportar_revision(detalles: list[Detalle], ruta: str | Path) -> Path:
     wb = Workbook()
     wb.remove(wb.active)
-    cols = ["Plano", "Losa", "Texto plano", "L", "Tipo", "Ø", "Cant.", "Rango (cm)", "Figura", "Lados (cm)",
+    cols = ["Plano", "Ciclo", "Losa", "Texto plano", "L", "Tipo", "Ø", "Cant.", "Rango (cm)", "Figura", "Lados (cm)",
             "L unit (cm)", "Peso (kg)", "Observaciones"]
-    ws = _hoja(wb, "Detalle", cols, [28, 11, 14, 8, 10, 5, 6, 10, 8, 22, 9, 10, 70])
-    pend = _hoja(wb, "Pendientes", cols, [28, 11, 14, 8, 10, 5, 6, 10, 8, 22, 9, 10, 70])
-    resumen: dict[tuple[str, int], list[float]] = defaultdict(lambda: [0, 0.0])
+    ws = _hoja(wb, "Detalle", cols, [28, 6, 11, 14, 8, 10, 5, 6, 10, 8, 22, 9, 10, 70])
+    pend = _hoja(wb, "Pendientes", cols, [28, 6, 11, 14, 8, 10, 5, 6, 10, 8, 22, 9, 10, 70])
+    resumen: dict[tuple, list[float]] = defaultdict(lambda: [0, 0.0])
     for d in detalles:
         lu = sum(d.lados)
-        pendiente = any("NO calculada" in o or "No se pudo" in o for o in d.observaciones)
+        pendiente = es_pendiente(d)
         peso = 0.0 if pendiente else round(d.cantidad * lu / 100 * peso_por_metro(d.diametro), 2)
-        fila = [d.plano, d.losa, d.texto, d.largo, d.tipo, d.diametro, d.cantidad,
+        fila = [d.plano, d.ciclo, d.losa, d.texto, d.largo, d.tipo, d.diametro, d.cantidad,
                 round(d.rango_cm) if d.rango_cm else None, d.figura, " + ".join(map(str, d.lados)),
                 lu, peso, "; ".join(d.observaciones)]
         ws.append(fila)
@@ -52,13 +56,13 @@ def exportar_revision(detalles: list[Detalle], ruta: str | Path) -> Path:
             for c in ws[ws.max_row]:
                 c.fill = _ALERTA
         if not pendiente:
-            r = resumen[(d.plano, d.diametro)]
+            r = resumen[(d.ciclo or 0, d.plano, d.diametro)]
             r[0] += d.cantidad
             r[1] += peso
-    rs = _hoja(wb, "Resumen", ["Plano", "Ø (mm)", "N° barras", "Peso (kg)"], [50, 8, 10, 12])
-    for (plano, diam), (n, kg) in sorted(resumen.items()):
-        rs.append([plano, diam, n, round(kg, 1)])
-    rs.append(["TOTAL", "", f"=SUM(C2:C{rs.max_row})", f"=SUM(D2:D{rs.max_row})"])
+    rs = _hoja(wb, "Resumen", ["Ciclo", "Plano", "Ø (mm)", "N° barras", "Peso (kg)"], [7, 50, 8, 10, 12])
+    for (ciclo, plano, diam), (n, kg) in sorted(resumen.items()):
+        rs.append([ciclo or None, plano, diam, n, round(kg, 1)])
+    rs.append(["TOTAL", "", "", f"=SUM(D2:D{rs.max_row})", f"=SUM(E2:E{rs.max_row})"])
     for c in rs[rs.max_row]:
         c.font = Font(bold=True)
     wb.move_sheet("Resumen", offset=-2)

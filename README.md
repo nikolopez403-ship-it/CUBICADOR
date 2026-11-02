@@ -66,6 +66,11 @@ Requiere `dwgread` de LibreDWG (variable `DWGREAD` con su ruta si no está en el
 - Columna A = losa (bloque `_LOSA` + contorno), I (marca) = INF / SUP / SUPLE / REF.
 - Escribe sobre la planilla original (conserva catálogo, imágenes, fórmulas y protección)
   y extiende la tabla si hay más de 100 filas.
+- Barras sin cota de rango: el rango es el largo del muro que cruzan (si no hay muro, la viga).
+- **Ciclos:** dibuje en AutoCAD polilíneas cerradas en una capa llamada p.ej. `CICLOS`, con un texto
+  `C1`, `C2`… dentro de cada una (en el mismo plano o en un DXF aparte con `--ciclos`). Cada barra
+  va al ciclo del cuadrante donde cae; si toca dos cuadrantes queda en el de menor número.
+  Las barras de un rango se ubican una a una, así un grupo puede repartirse. Sale un Excel por ciclo.
 - Genera además `*_revision.xlsx`: detalle por etiqueta con observaciones, **pendientes**
   (barras sin cota de rango, que no entran al pedido) y resumen de kg por diámetro.
 

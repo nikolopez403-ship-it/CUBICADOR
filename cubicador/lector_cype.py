@@ -38,6 +38,7 @@ class EtiquetaCype:
     trazo: Trazo | None = None
     rango_cm: float | None = None
     rango_seg: tuple[Punto, Punto] | None = None
+    rotacion: float = 0.0          # radianes, del texto CUANTIA (dirección de la barra)
     handle: int = 0
 
 
@@ -55,6 +56,17 @@ class PlanoCype:
     losas: list[Losa]
     rangos: list[tuple[float, tuple[Punto, Punto]]]   # (medida, segmento) de todas las cotas RANGOS
     titulo: str = ""
+    barras: list[Trazo] = field(default_factory=list)          # todas las polilíneas BARRAS
+    muros: list[tuple[Punto, Punto]] = field(default_factory=list)   # líneas capa MUROS
+    vigas: list[tuple[Punto, Punto]] = field(default_factory=list)   # líneas capa VIGAS
+    ciclos: list["Cuadrante"] = field(default_factory=list)   # cuadrantes dibujados en capa *CICLO*
+
+
+@dataclass
+class Cuadrante:
+    numero: int
+    nombre: str
+    poligono: list[Punto]
 
 
 def _buscar_dwgread() -> str:
@@ -157,6 +169,10 @@ def leer_plano_cype(ruta: str | Path) -> PlanoCype:
             continue
         et = EtiquetaCype(cuantia=atts["CUANTIA"], largo=atts.get("LARGO", ""),
                           punto=_pt(o["ins_pt"]), handle=o["handle"][-1])
+        for a in o["attribs"]:
+            at = por_h.get(_h(a))
+            if at and (at.get("tag") or "").upper() == "CUANTIA":
+                et.rotacion = float(at.get("rotation") or 0.0)
         lados = [atts[k] for k in "ABCDEFGHIJ" if atts.get(k)]
         if lados and all(re.fullmatch(r"\d+(?:[.,]\d+)?", x) for x in lados):
             et.lados = [int(round(float(x.replace(",", ".")))) for x in lados]
@@ -180,9 +196,36 @@ def leer_plano_cype(ruta: str | Path) -> PlanoCype:
 
     rangos = []
     contornos = []
+    barras: list[Trazo] = []
+    muros: list[tuple[Punto, Punto]] = []
+    vigas: list[tuple[Punto, Punto]] = []
+    pol_ciclo: list[list[Punto]] = []
+    txt_ciclo: list[tuple[str, Punto]] = []
     for o in objs:
         if not en_modelo(o):
             continue
+        cp = capa(o) or ""
+        if "CICLO" in cp.upper():
+            if o.get("entity") == "LWPOLYLINE" and len(o.get("points", [])) >= 3:
+                pol_ciclo.append([_pt(p) for p in o["points"]])
+            elif o.get("entity") in ("TEXT", "MTEXT") and o.get("ins_pt"):
+                txt_ciclo.append((_texto(o.get("text_value")), _pt(o["ins_pt"])))
+            elif o.get("entity") == "INSERT" and o.get("attribs"):
+                for a in o["attribs"]:
+                    at = por_h.get(_h(a))
+                    if at and at.get("text_value"):
+                        txt_ciclo.append((_texto(at["text_value"]), _pt(o["ins_pt"])))
+        if cp.upper() in ("MUROS", "VIGAS"):
+            destino = muros if cp.upper() == "MUROS" else vigas
+            if o.get("entity") == "LINE":
+                destino.append((_pt(o["start"]), _pt(o["end"])))
+            elif o.get("entity") == "LWPOLYLINE":
+                pts = [_pt(q) for q in o.get("points", [])]
+                destino.extend(zip(pts, pts[1:]))
+        if o.get("entity") == "LWPOLYLINE" and cp.upper() == "BARRAS":
+            tr = _trazo_lw(o)
+            if tr:
+                barras.append(tr)
         if o.get("entity", "").startswith("DIMENSION") and capa(o).upper() == "RANGOS":
             seg = _segmento_cota(o)
             if seg and o.get("act_measurement"):
@@ -195,7 +238,42 @@ def leer_plano_cype(ruta: str | Path) -> PlanoCype:
             if _dentro(losa.punto, c):
                 losa.contorno = c
                 break
-    return PlanoCype(etiquetas, losas, rangos, titulo)
+    plano = PlanoCype(etiquetas, losas, rangos, titulo, barras, armar_cuadrantes(pol_ciclo, txt_ciclo))
+    plano.muros, plano.vigas = muros, vigas
+    return plano
+
+
+def armar_cuadrantes(poligonos: list[list[Punto]], textos: list[tuple[str, Punto]]) -> list[Cuadrante]:
+    """Une cada polígono de ciclo con el texto (C1, CICLO 2, 3...) que está dentro."""
+    res = []
+    for pol in poligonos:
+        for txt, pt in textos:
+            m = re.search(r"(\d+)", txt or "")
+            if m and _dentro(pt, pol):
+                res.append(Cuadrante(int(m.group(1)), txt.strip(), pol))
+                break
+    return sorted(res, key=lambda c: c.numero)
+
+
+def leer_cuadrantes(ruta: str | Path) -> list[Cuadrante]:
+    """Cuadrantes desde un archivo aparte (DXF o DWG): polilíneas cerradas + texto en capa *CICLO*."""
+    ruta = Path(ruta)
+    if ruta.suffix.lower() == ".dwg":
+        return leer_plano_cype(ruta).ciclos
+    import ezdxf
+    from ezdxf import recover
+    doc, _ = recover.readfile(str(ruta))
+    pols, txts = [], []
+    for e in doc.modelspace():
+        if "CICLO" not in e.dxf.get("layer", "").upper():
+            continue
+        if e.dxftype() == "LWPOLYLINE":
+            pols.append([(p[0], p[1]) for p in e.get_points()])
+        elif e.dxftype() == "TEXT":
+            txts.append((e.dxf.text, (e.dxf.insert.x, e.dxf.insert.y)))
+        elif e.dxftype() == "MTEXT":
+            txts.append((e.plain_text(), (e.dxf.insert.x, e.dxf.insert.y)))
+    return armar_cuadrantes(pols, txts)
 
 
 def _dentro(p: Punto, poli: list[Punto]) -> bool:

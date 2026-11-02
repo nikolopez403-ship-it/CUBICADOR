@@ -118,3 +118,26 @@ def test_exportar_armacero(tmp_path):
     assert out["M6"].value == 12 and out["K125"].value == 12
     assert out["H125"].value.startswith("=IF(SUM(K125:T125)")
     assert out["B3"].value == "=SUM(AA6:AA125)"
+
+
+# --- Ciclos ------------------------------------------------------------------
+def test_ciclo_menor_si_toca_dos_cuadrantes():
+    from cubicador.ciclos import ciclo_de
+    from cubicador.lector_cype import Cuadrante
+    c1 = Cuadrante(1, "C1", [(0, 0), (100, 0), (100, 100), (0, 100)])
+    c2 = Cuadrante(2, "C2", [(100, 0), (200, 0), (200, 100), (100, 100)])
+    assert ciclo_de([(10, 50), (90, 50)], [c1, c2]) == 1
+    assert ciclo_de([(110, 50), (190, 50)], [c1, c2]) == 2
+    assert ciclo_de([(150, 50), (95, 50)], [c1, c2]) == 1      # viene de C2 y amarra en C1
+    assert ciclo_de([(300, 50), (400, 50)], [c1, c2]) is None
+
+
+def test_rango_por_largo_de_muro():
+    from cubicador.cubicacion_cype import _rango_por_apoyo
+    from cubicador.lector_cype import EtiquetaCype
+    from cubicador.modelo import Trazo
+    et = EtiquetaCype("F'=Ø10a30", trazo=Trazo([300], [(0, -150), (0, 150)]))
+    muro = [((-200, 0), (100, 0)), ((100, 0), (370, 0)),       # cara 1 partida en dos líneas
+            ((-200, 15), (370, 15))]                           # cara 2
+    largo, _ = _rango_por_apoyo(et, muro)
+    assert round(largo) == 570
