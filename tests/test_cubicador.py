@@ -69,3 +69,52 @@ def test_cubicacion_plano_ejemplo(plano):
     assert partidas["E1"].forma == "Estribo rectangular"
     assert partidas["M4"].largo_unitario_m == 2.65          # dentro de un bloque
     assert "EJE A" not in [p.texto_original for p in partidas.values()]
+
+
+# --- CYPE / Armacero -------------------------------------------------------
+from cubicador.cubicacion_cype import cantidad_por_rango, figura_cype, interpretar_cuantia
+
+
+@pytest.mark.parametrize("txt,esperado", [
+    ("%%c8a18s", {"cara": "", "n": None, "d": 8, "s": 18.0, "pos": "s"}),
+    ("F'=%%c10a30", {"cara": "F'", "n": None, "d": 10, "s": 30.0, "pos": ""}),
+    ("F=F'=2%%c16", {"cara": "F=F'", "n": 2, "d": 16, "s": None, "pos": ""}),
+    ("F'=3%%C12", {"cara": "F'", "n": 3, "d": 12, "s": None, "pos": ""}),
+])
+def test_cuantia_cype(txt, esperado):
+    assert interpretar_cuantia(txt) == esperado
+
+
+def test_cantidad_por_rango():
+    assert cantidad_por_rango(560, 18) == 33   # techo(31.1) + 1
+    assert cantidad_por_rango(540, 18) == 31   # exacto: 30 + 1
+
+
+def test_figuras_cype():
+    assert figura_cype([], [], 450, []) == ("101A", [450])
+    assert figura_cype([150, 20], [90], None, []) == ("102A", [20, 150])
+    assert figura_cype([12, 300, 12], [90, 90], None, []) == ("103A", [12, 300, 12])
+    assert figura_cype([8, 12, 120, 12, 8], [-90] * 4, None, []) == ("105A", [8, 12, 120, 12, 8])
+
+
+def test_exportar_armacero(tmp_path):
+    from openpyxl import Workbook
+    from cubicador.armacero import FilaPedido, exportar_armacero
+    import openpyxl
+    # plantilla mínima con la estructura de la hoja ARM IMPORT
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "ARM IMPORT"
+    ws["B2"] = '=CONCATENATE(C6," - ",B6)'
+    ws["B3"] = "=SUM(AA6:AA105)"
+    for r in range(6, 106):
+        ws[f"H{r}"] = f'=IF(SUM(K{r}:T{r})=0,"",SUM(K{r}:T{r}))'
+        ws[f"AA{r}"] = f'=IFERROR(Z{r}*E{r},"")'
+    wb.save(tmp_path / "plantilla.xlsx")
+    filas = [FilaPedido("Losa 1", "LC", 12, 3, 5, 10, "103A", [12, 300, 12])] * 120
+    exportar_armacero(filas, tmp_path / "plantilla.xlsx", tmp_path / "out.xlsx")
+    out = openpyxl.load_workbook(tmp_path / "out.xlsx")["ARM IMPORT"]
+    assert [out[f"{c}6"].value for c in "ABCDEFG"] == ["Losa 1", "LC", 12, 3, 5, 10, "103A"]
+    assert out["M6"].value == 12 and out["K125"].value == 12
+    assert out["H125"].value.startswith("=IF(SUM(K125:T125)")
+    assert out["B3"].value == "=SUM(AA6:AA125)"

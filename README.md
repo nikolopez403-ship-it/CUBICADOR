@@ -51,6 +51,24 @@ punta de la flecha para asociar).
 - No descuenta traslapes ni optimiza cortes.
 - La conexión en vivo (`autocad_vivo.py`) usa COM de AutoCAD y no está probada en Windows todavía.
 
+## Planos de losas CYPECAD → pedido Armacero
+
+    python -m cubicador cype PLANO_MALLA.dwg PLANO_REFUERZOS.dwg \
+        --plantilla Pedido_Fe.xlsx --piso 12 --ciclo 3 -o "P12 - LC - C3.xlsx"
+
+Requiere `dwgread` de LibreDWG (variable `DWGREAD` con su ruta si no está en el PATH).
+
+- Lee los bloques de etiqueta de CYPE (CUANTIA, LARGO, lados A..E, PARCIAL) y sus enlaces
+  `SCAD_LOSAS` a la polilínea (capa BARRAS) y la cota de rango (capa RANGOS).
+- Cantidad: `Ø8a18` con rango R → techo(R/18) + 1; `F=F'=2Ø16` → 2 inf. + 2 sup.; `F'=3Ø12` → 3.
+- Figura: sin lados = 101A; 2 lados = 102A (A = pata); 3 = 103A; 4 = 104A; 5 = 105A.
+  Los quiebres de ±31° que CYPE dibuja para separar barras superpuestas se ignoran.
+- Columna A = losa (bloque `_LOSA` + contorno), I (marca) = INF / SUP / SUPLE / REF.
+- Escribe sobre la planilla original (conserva catálogo, imágenes, fórmulas y protección)
+  y extiende la tabla si hay más de 100 filas.
+- Genera además `*_revision.xlsx`: detalle por etiqueta con observaciones, **pendientes**
+  (barras sin cota de rango, que no entran al pedido) y resumen de kg por diámetro.
+
 ## Tests
 
     python -m pytest

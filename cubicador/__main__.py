@@ -34,7 +34,18 @@ def main(argv=None) -> int:
         p.add_argument("--radio", type=float, default=60.0, help="Distancia máx. texto-barra en cm (60)")
         p.add_argument("--sin-ganchos", action="store_true", help="No sumar ganchos de 135° a estribos")
 
+    pc = sub.add_parser("cype", help="Planos de losas CYPECAD (DWG) -> pedido Armacero")
+    pc.add_argument("planos", nargs="+", help="Uno o más DWG del mismo pedido")
+    pc.add_argument("--plantilla", required=True, help="Planilla de pedido Armacero (.xlsx) a usar de base")
+    pc.add_argument("-o", "--salida", default="pedido.xlsx")
+    pc.add_argument("--piso", required=True)
+    pc.add_argument("--ciclo", default="")
+    pc.add_argument("--particion", default="LC", help="FUND, ELEV, LC, VC, BAT u OTRO (LC)")
+    pc.add_argument("--sin-agrupar", action="store_true", help="Una fila por etiqueta, sin sumar barras iguales")
+
     a = ap.parse_args(argv)
+    if a.modo == "cype":
+        return _main_cype(a)
     kw = dict(unidad_dibujo=a.unidad_dibujo, capas_fierro=_lista(a.capas_fierro), capas_texto=_lista(a.capas_texto))
     try:
         if a.modo == "archivo":
@@ -67,6 +78,46 @@ def main(argv=None) -> int:
     if alertas:
         print(f"⚠ {alertas} partidas con observaciones (marcadas en amarillo en el Excel)")
     print(f"Guardado en {salida}")
+    return 0
+
+
+def _main_cype(a) -> int:
+    from collections import defaultdict
+
+    from .armacero import exportar_armacero
+    from .cubicacion_cype import cubicar_cype
+    from .lector_cype import leer_plano_cype
+    from .pesos import peso_por_metro
+    from .revision import exportar_revision
+
+    filas, detalles = [], []
+    for ruta in a.planos:
+        try:
+            plano = leer_plano_cype(ruta)
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        nombre = plano.titulo or Path(ruta).stem
+        f, d = cubicar_cype(plano, nombre, a.particion, a.piso, a.ciclo, agrupar=not a.sin_agrupar)
+        filas += f
+        detalles += d
+        print(f"{nombre}: {len(d)} etiquetas -> {len(f)} filas")
+
+    salida = Path(a.salida)
+    exportar_armacero(filas, a.plantilla, salida)
+    rev = salida.with_name(salida.stem + "_revision.xlsx")
+    exportar_revision(detalles, rev)
+
+    kg = defaultdict(float)
+    for r in filas:
+        kg[r.diametro] += r.cantidad * sum(r.lados) / 100 * peso_por_metro(r.diametro)
+    for dm, v in sorted(kg.items()):
+        print(f"  Ø{dm:<3} {v:>10.1f} kg")
+    print(f"  Total {sum(kg.values()):>9.1f} kg  ({len(filas)} filas)")
+    pend = sum(1 for d in detalles if any("NO calculada" in o for o in d.observaciones))
+    if pend:
+        print(f"⚠ {pend} etiquetas sin cota de rango: NO incluidas en el pedido (ver hoja 'Pendientes')")
+    print(f"Pedido:   {salida}\nRevisión: {rev}")
     return 0
 
 
